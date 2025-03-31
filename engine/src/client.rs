@@ -7,7 +7,7 @@ use std::time::Instant;
 
 use futures::future::try_join_all;
 use rand::Rng;
-use tokio::stream::StreamExt;
+use futures::StreamExt;
 use tokio::sync::broadcast::Sender;
 use tokio::sync::{Mutex, broadcast};
 use tokio::time::{Duration, sleep};
@@ -34,7 +34,7 @@ const N_CLIENTS: u64 = 3;
 const TARGET_THROUGHPUT: u64 = 800; // RPS
 
 static mut START: Option<Instant> = None;
-static mut DONE: AtomicU64 = AtomicU64::new(0);
+static DONE: AtomicU64 = AtomicU64::new(0);
 
 /// Starts a few mock clients to test that the replicated matching engine works correctly
 #[tokio::main]
@@ -48,7 +48,7 @@ async fn main() {
         }))
     }
 
-    try_join_all(threads).await;
+    let _ = try_join_all(threads).await;
 }
 
 /// Starts a mock client that sends [N_REQUESTS] client orders and retries them if they time out.
@@ -68,7 +68,9 @@ async fn start_mock_client(client_id: u64) {
 
     for leader_id in 0..N_LEADERS {
         let mut conn = connect_to_leader(leader_id).await;
-        let rx_stream = tx.subscribe().into_stream().map(|order| order.unwrap());
+        // Create a BroadcastStream from the receiver
+        let rx_stream = tokio_stream::wrappers::BroadcastStream::new(tx.subscribe())
+            .filter_map(|result| async move { result.ok() });
         let resp = conn.limit_order_queue(rx_stream).await;
         assert!(resp.is_ok());
 
@@ -93,12 +95,10 @@ async fn start_mock_client(client_id: u64) {
                             order_manager.complete_order(order_ack.seq_number);
 
                             if order_ack.seq_number == N_REQUESTS {
-                                unsafe {
-                                    let done = DONE.fetch_add(1, atomic::Ordering::SeqCst);
-                                    if done + 1 == N_CLIENTS {
-                                        let duration = START.unwrap().elapsed();
-                                        println!("Duration: {:}ms", duration.as_millis())
-                                    }
+                                let done = DONE.fetch_add(1, atomic::Ordering::SeqCst);
+                                if done + 1 == N_CLIENTS {
+                                    let duration = unsafe { START.unwrap() }.elapsed();
+                                    println!("Duration: {:}ms", duration.as_millis())
                                 }
                             }
                             warn!(
@@ -126,9 +126,7 @@ async fn start_mock_client(client_id: u64) {
 
     threads.push(tokio::spawn(async move {
         sleep(Duration::from_secs(1)).await;
-        unsafe {
-            START = Some(Instant::now());
-        }
+        unsafe { START = Some(Instant::now()); }
 
         loop {
             let mut order_manager = order_manager.lock().await;
@@ -140,7 +138,7 @@ async fn start_mock_client(client_id: u64) {
                     "[{:}] Sending order: {:}",
                     order.client_id, order.seq_number
                 );
-                tx.send(order);
+                let _ = tx.send(order);
                 sleep(Duration::from_micros(1_000_000 / TARGET_THROUGHPUT)).await;
             } else {
                 sleep(LOOPING_PERIOD).await;
@@ -149,7 +147,7 @@ async fn start_mock_client(client_id: u64) {
     }));
 
     for th in threads {
-        tokio::join!(th);
+        let _ = tokio::join!(th);
     }
 }
 
@@ -166,7 +164,7 @@ async fn connect_to_leader(leader_id: u16) -> MatchingEngineRpcClient<tonic::tra
 fn generate_random_order_request(client_id: u64, seq_number: u64) -> Order {
     let mut rng = rand::rng();
     let price: u64 = rng.random_range(10..=1000);
-    let side = OrderSide::from_i32(rng.random_range(0..=1)).unwrap();
+    let side = OrderSide::try_from(rng.random_range(0..=1)).unwrap();
     Order {
         client_id,
         price,

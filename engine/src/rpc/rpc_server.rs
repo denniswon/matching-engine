@@ -1,9 +1,9 @@
 use std::pin::Pin;
 use std::sync::Arc;
 
-use futures::TryStreamExt;
-use tokio::stream::Stream;
+use futures::{Stream, TryStreamExt};
 use tokio::sync::{broadcast, RwLock};
+use tokio_stream::StreamExt as _;
 use tonic::{Code, Request, Response, Status};
 use tracing::trace;
 
@@ -204,9 +204,13 @@ impl MatchingEngineRpc for Arc<MatchingEngine> {
             }
         };
 
-        let resp_stream = Box::pin(
-            rx.map_err(|err| tonic::Status::new(Code::FailedPrecondition, err.to_string())),
-        );
+        // Create a stream from the receiver
+        let stream = tokio_stream::wrappers::BroadcastStream::new(rx);
+
+        // Now map the errors properly
+        let resp_stream = Box::pin(stream.map(|result| {
+            result.map_err(|err| tonic::Status::new(Code::FailedPrecondition, err.to_string()))
+        }));
         Ok(Response::new(resp_stream))
     }
 
@@ -225,9 +229,14 @@ impl MatchingEngineRpc for Arc<MatchingEngine> {
             sm.get_trade_channel_receiver(client.client_id).await
         };
 
-        let resp_stream = Box::pin(
-            rx.map_err(|err| tonic::Status::new(Code::FailedPrecondition, err.to_string())),
-        );
+        // Create a stream from the receiver
+        let stream = tokio_stream::wrappers::BroadcastStream::new(rx);
+
+        // Now map the errors properly
+        let resp_stream = Box::pin(stream.map(|result| {
+            result.map_err(|err| tonic::Status::new(Code::FailedPrecondition, err.to_string()))
+        }));
+
         Ok(Response::new(resp_stream))
     }
 }
@@ -238,7 +247,7 @@ impl MatchingEngineRpc for Arc<MatchingEngine> {
 /// would make the raft code the engine implementation interdependent.
 #[inline]
 fn order_to_command(order: Order) -> Command {
-    let side = OrderSide::from_i32(order.side).unwrap();
+    let side = OrderSide::try_from(order.side).unwrap();
     Command {
         r#type: CommandType::Limit as i32,
         sequence_id: order.seq_number,
@@ -257,7 +266,7 @@ fn order_to_command(order: Order) -> Command {
 /// would make the raft code the engine implementation interdependent.
 #[inline]
 fn cancel_order_to_command(order: CancelOrder) -> Command {
-    let side = OrderSide::from_i32(order.side).unwrap();
+    let side = OrderSide::try_from(order.side).unwrap();
     Command {
         r#type: CommandType::Cancel as i32,
         sequence_id: order.seq_number,

@@ -509,16 +509,23 @@ impl RaftNode {
     }
 
     async fn start_reelection(&self) -> Result<()> {
-        let (me, network, term, last_log_index, last_log_term) = {
+        let (me, peers_to_contact, term, last_log_index, last_log_term) = {
             let mut raft = self.raft.write().await;
             raft.set_target_state(TargetState::Candidate);
             raft.voted_for = None;
             raft.current_term += 1;
             raft.update_reelection_timeout();
 
+            // Create a collection of peer IDs to contact
+            let peers_to_contact: Vec<_> = raft.network.peers
+                .iter()
+                .filter(|(id, _)| **id != raft.me)
+                .map(|(id, _)| *id)
+                .collect();
+
             (
                 raft.me,
-                raft.network.clone(),
+                peers_to_contact,
                 raft.current_term,
                 raft.last_log_index,
                 raft.last_log_term,
@@ -535,14 +542,14 @@ impl RaftNode {
         let result_handler;
 
         {
-            let (s, r) = mpsc::channel(network.peers.len() - 1);
+            let (s, r) = mpsc::channel(peers_to_contact.len());
 
-            for (id, _) in network.peers.iter().filter(|(id, _)| *id != &me) {
+            for peer_id in peers_to_contact {
                 let raft = self.raft.clone();
                 let request = request.clone();
                 let s = s.clone();
                 handles.push(spawn(async move {
-                    RaftNode::send_request_vote(raft, request, *id, s).await
+                    RaftNode::send_request_vote(raft, request, peer_id, s).await
                 }));
             }
 

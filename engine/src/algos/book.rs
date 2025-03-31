@@ -27,7 +27,7 @@ impl Order {
     /// Initialises an order from an RPC order definition
     #[inline]
     fn from_proto(order: &protobuf::Order) -> Self {
-        let side = match protobuf::OrderSide::from_i32(order.side).unwrap() {
+        let side = match protobuf::OrderSide::try_from(order.side).unwrap() {
             protobuf::OrderSide::Buy => Side::Buy,
             protobuf::OrderSide::Sell => Side::Sell,
         };
@@ -60,7 +60,7 @@ impl Order {
     /// Creates a Raft command from this order
     #[inline]
     pub(crate) fn from_command(command: &raft::protobuf::Command) -> Self {
-        let side = match raft::protobuf::OrderSide::from_i32(command.side).unwrap() {
+        let side = match raft::protobuf::OrderSide::try_from(command.side).unwrap() {
             raft::protobuf::OrderSide::Buy => Side::Buy,
             raft::protobuf::OrderSide::Sell => Side::Sell,
             _ => panic!("Only Buy and Sell orders supported"),

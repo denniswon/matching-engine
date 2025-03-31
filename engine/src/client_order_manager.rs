@@ -2,7 +2,7 @@ use std::cmp::{Ord, Ordering};
 use std::collections::{BinaryHeap, HashSet};
 use std::time::Instant;
 
-use tokio::stream::StreamExt;
+use tokio_stream::StreamExt;
 use tracing::debug;
 
 use crate::protobuf::*;
