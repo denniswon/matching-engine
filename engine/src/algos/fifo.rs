@@ -11,6 +11,12 @@ pub struct FIFOBook {
     bids: BinaryHeap<Order>,
 }
 
+impl Default for FIFOBook {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl FIFOBook {
     pub fn new() -> Self {
         Self {
@@ -127,7 +133,7 @@ mod tests {
         println!("Bids: {:?}", &book.bids);
         println!("Asks: {:?}", &book.asks);
         println!("Trades: {:?}", &trades);
-        assert_eq!(trades.is_empty(), false);
+        assert!(!trades.is_empty());
     }
 
     #[test]
@@ -145,21 +151,21 @@ mod tests {
     }
 
     fn generate_tradable_orders(n: u64) -> Vec<Order> {
-        let mut rand = rand::thread_rng();
+        let mut rand = rand::rng();
         let mut last_ask = 0;
         let mut last_bid = 0;
         let mut orders = vec![];
         for _ in 0..n {
             let (price, size, side) = if rand.gen_bool(0.5) {
                 // Generate buy order
-                let price = std::cmp::max(1, last_ask as i64 + rand.gen_range(-10..10)) as u64;
+                let price = std::cmp::max(1, last_ask as i64 + rand.random_range(-10..10)) as u64;
                 last_bid = price;
-                (price, rand.gen_range(0..20), Side::Buy)
+                (price, rand.random_range(0..20), Side::Buy)
             } else {
                 // Generate sell order
-                let price = std::cmp::max(1, last_bid as i64 + rand.gen_range(-10..10)) as u64;
+                let price = std::cmp::max(1, last_bid as i64 + rand.random_range(-10..10)) as u64;
                 last_ask = price;
-                (price, rand.gen_range(0..20), Side::Sell)
+                (price, rand.random_range(0..20), Side::Sell)
             };
 
             orders.push(Order {
@@ -170,6 +176,6 @@ mod tests {
                 price,
             });
         }
-        return orders;
+        orders
     }
 }

@@ -19,6 +19,12 @@ pub struct FIFOBook {
 }
 
 /// Order book interface implementation
+impl Default for FIFOBook {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl FIFOBook {
     pub fn new() -> Self {
         Self {
@@ -65,10 +71,10 @@ impl FIFOBook {
         let bid_id = bid.id();
         let result = Order::merge(ask, bid);
         if let Some((_, remainder)) = &result {
-            if remainder.as_ref().map_or(true, |rem| !rem.has_id(ask_id)) {
+            if remainder.as_ref().is_none_or(|rem| !rem.has_id(ask_id)) {
                 self.orders.remove(&ask_id);
             }
-            if remainder.as_ref().map_or(true, |rem| !rem.has_id(bid_id)) {
+            if remainder.as_ref().is_none_or(|rem| !rem.has_id(bid_id)) {
                 self.orders.remove(&bid_id);
             }
         }
@@ -247,7 +253,7 @@ mod tests {
 
         println!("Book: {:?}", &book);
         println!("Trades: {:?}", &trades);
-        assert_eq!(trades.is_empty(), false);
+        assert!(!trades.is_empty());
         assert_eq!(book.orders.len(), 4);
     }
 
@@ -283,8 +289,8 @@ mod tests {
         println!("Trades: {:?}", &trades);
 
         assert_eq!(trades.len(), 3);
-        assert_eq!(book.bid_price_buckets.get(&3).unwrap().is_empty(), true);
-        assert_eq!(book.ask_price_buckets.get(&3).unwrap().is_empty(), false);
+        assert!(book.bid_price_buckets.get(&3).unwrap().is_empty());
+        assert!(!book.ask_price_buckets.get(&3).unwrap().is_empty());
     }
 
     #[test]
@@ -302,7 +308,7 @@ mod tests {
     }
 
     fn generate_tradable_orders(n: u64) -> Vec<Order> {
-        let mut rand = rand::thread_rng();
+        let mut rand = rand::rng();
         let mut last_ask = 0;
         let mut last_bid = 0;
         let mut orders = vec![];
@@ -311,18 +317,18 @@ mod tests {
                 // Generate buy order
                 let price = std::cmp::max(
                     1,
-                    std::cmp::min(1000, last_ask as i64 + rand.gen_range(-10..10)),
+                    std::cmp::min(1000, last_ask as i64 + rand.random_range(-10..10)),
                 ) as u64;
                 last_bid = price;
-                (price, rand.gen_range(0..20), Side::Buy)
+                (price, rand.random_range(0..20), Side::Buy)
             } else {
                 // Generate sell order
                 let price = std::cmp::max(
                     1,
-                    std::cmp::min(1000, last_bid as i64 + rand.gen_range(-10..10)),
+                    std::cmp::min(1000, last_bid as i64 + rand.random_range(-10..10)),
                 ) as u64;
                 last_ask = price;
-                (price, rand.gen_range(0..20), Side::Sell)
+                (price, rand.random_range(0..20), Side::Sell)
             };
 
             orders.push(Order {
@@ -333,7 +339,7 @@ mod tests {
                 price,
             });
         }
-        return orders;
+        orders
     }
 
     #[ignore]
@@ -344,16 +350,16 @@ mod tests {
             let order = Order {
                 client_id: 0,
                 seq_number: 0,
-                price: rand::thread_rng().gen_range(120000..=130000),
-                size: rand::thread_rng().gen_range(1..=20),
+                price: rand::rng().random_range(120000..=130000),
+                size: rand::rng().random_range(1..=20),
                 side: Side::Buy,
             };
             book.apply(order);
             let order = Order {
                 client_id: 0,
                 seq_number: 0,
-                price: rand::thread_rng().gen_range(120000..=130000),
-                size: rand::thread_rng().gen_range(1..=20),
+                price: rand::rng().random_range(120000..=130000),
+                size: rand::rng().random_range(1..=20),
                 side: Side::Sell,
             };
             book.apply(order);

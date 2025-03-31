@@ -6,7 +6,7 @@ use futures::future::try_join_all;
 use itertools::Itertools;
 use tokio::sync::RwLock;
 use tokio::task::spawn;
-use tokio::time::{delay_for, Duration};
+use tokio::time::{sleep, Duration};
 use tracing::trace;
 
 use raft::raft::{Raft, RaftNode};
@@ -48,7 +48,7 @@ async fn check_expected_state(nodes: Vec<RaftNode>) {
     assert!(*terms.first().unwrap() > 0);
     println!("Leaders: {:?}", &leaders);
     println!("Leader: {:?}", leaders.first().unwrap());
-    assert!(leaders.first().is_some());
+    assert!(!leaders.is_empty());
     assert!(leaders.iter().all_equal());
 }
 
@@ -58,9 +58,8 @@ async fn simulate_raft(simulation_length: u64) -> Result<Vec<RaftNode>> {
     let num_replicas = 3;
     let config = RaftConfig::new(num_replicas);
     let nodes: Vec<RaftNode> = (0..num_replicas)
-        .into_iter()
         .map(|id| {
-            let raft = Raft::new(id as u64, config.clone(), PrinterStateMachine::new());
+            let raft = Raft::new(id, config.clone(), PrinterStateMachine::new());
             let shared_raft = Arc::new(RwLock::new(raft));
             RaftNode::new_with_shutdown(shared_raft, shutdown_signal.clone())
         })
@@ -79,7 +78,7 @@ async fn simulate_raft(simulation_length: u64) -> Result<Vec<RaftNode>> {
 
     let signal = shutdown_signal.clone();
     threads.push(spawn(async move {
-        delay_for(Duration::from_secs(simulation_length)).await;
+        sleep(Duration::from_secs(simulation_length)).await;
         trace!("Sending shutdown signal");
         signal.shutdown();
         trace!("Shutdown signal sent");

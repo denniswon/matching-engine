@@ -18,6 +18,12 @@ pub struct ShutdownSignal {
     semaphore: Semaphore,
 }
 
+impl Default for ShutdownSignal {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl ShutdownSignal {
     pub fn new() -> Self {
         Self {
@@ -43,7 +49,7 @@ mod tests {
     use std::time::Duration;
 
     use futures::future::join;
-    use tokio::time::delay_for;
+    use tokio::time::sleep;
 
     use super::*;
 
@@ -60,7 +66,7 @@ mod tests {
         let signal = Arc::new(ShutdownSignal::new());
         let s1 = signal.clone();
         let th1 = tokio::spawn(async move {
-            delay_for(Duration::from_millis(200)).await;
+            sleep(Duration::from_millis(200)).await;
             let signal = s1;
             signal.shutdown();
         });

@@ -55,9 +55,8 @@ impl MatchingEngine {
             let tx = {
                 let sm = self.me_node.state_machine.lock().await;
                 let mut ack_channel_map = sm.order_acknowledgement_channel.write().await;
-                if !ack_channel_map.contains_key(&order.client_id) {
-                    ack_channel_map
-                        .insert(order.client_id, broadcast::channel(ACK_CHANNEL_CAPACITY));
+                if let std::collections::hash_map::Entry::Vacant(e) = ack_channel_map.entry(order.client_id) {
+                    e.insert(broadcast::channel(ACK_CHANNEL_CAPACITY));
                     let (tx, _) = ack_channel_map.get(&order.client_id).unwrap();
                     tx.clone()
                 } else {
@@ -111,9 +110,8 @@ impl MatchingEngine {
             let tx = {
                 let sm = self.me_node.state_machine.lock().await;
                 let mut ack_channel_map = sm.order_acknowledgement_channel.write().await;
-                if !ack_channel_map.contains_key(&order.client_id) {
-                    ack_channel_map
-                        .insert(order.client_id, broadcast::channel(ACK_CHANNEL_CAPACITY));
+                if let std::collections::hash_map::Entry::Vacant(e) = ack_channel_map.entry(order.client_id) {
+                    e.insert(broadcast::channel(ACK_CHANNEL_CAPACITY));
                     let (tx, _) = ack_channel_map.get(&order.client_id).unwrap();
                     tx.clone()
                 } else {
@@ -197,10 +195,7 @@ impl MatchingEngineRpc for Arc<MatchingEngine> {
             if !ack_channel_map.contains_key(&client.client_id) {
                 drop(ack_channel_map);
                 let mut ack_channel_map = sm.order_acknowledgement_channel.write().await;
-                if !ack_channel_map.contains_key(&client.client_id) {
-                    ack_channel_map
-                        .insert(client.client_id, broadcast::channel(ACK_CHANNEL_CAPACITY));
-                }
+                ack_channel_map.entry(client.client_id).or_insert_with(|| broadcast::channel(ACK_CHANNEL_CAPACITY));
                 let (tx, _) = ack_channel_map.get(&client.client_id).unwrap();
                 tx.subscribe()
             } else {
@@ -243,10 +238,7 @@ impl MatchingEngineRpc for Arc<MatchingEngine> {
 /// would make the raft code the engine implementation interdependent.
 #[inline]
 fn order_to_command(order: Order) -> Command {
-    let side = match OrderSide::from_i32(order.side).unwrap() {
-        OrderSide::Buy => OrderSide::Buy,
-        OrderSide::Sell => OrderSide::Sell,
-    };
+    let side = OrderSide::from_i32(order.side).unwrap();
     Command {
         r#type: CommandType::Limit as i32,
         sequence_id: order.seq_number,
@@ -265,10 +257,7 @@ fn order_to_command(order: Order) -> Command {
 /// would make the raft code the engine implementation interdependent.
 #[inline]
 fn cancel_order_to_command(order: CancelOrder) -> Command {
-    let side = match OrderSide::from_i32(order.side).unwrap() {
-        OrderSide::Buy => OrderSide::Buy,
-        OrderSide::Sell => OrderSide::Sell,
-    };
+    let side = OrderSide::from_i32(order.side).unwrap();
     Command {
         r#type: CommandType::Cancel as i32,
         sequence_id: order.seq_number,

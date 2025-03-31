@@ -1,16 +1,16 @@
 use std::net::Ipv4Addr;
 use std::net::SocketAddrV4;
+use std::sync::Arc;
 use std::sync::atomic;
 use std::sync::atomic::AtomicU64;
-use std::sync::Arc;
 use std::time::Instant;
 
 use futures::future::try_join_all;
 use rand::Rng;
 use tokio::stream::StreamExt;
 use tokio::sync::broadcast::Sender;
-use tokio::sync::{broadcast, Mutex};
-use tokio::time::{delay_for, Duration};
+use tokio::sync::{Mutex, broadcast};
+use tokio::time::{Duration, sleep};
 use tracing::{debug, error, info, warn};
 
 use protobuf::matching_engine_rpc_client::MatchingEngineRpcClient;
@@ -125,7 +125,7 @@ async fn start_mock_client(client_id: u64) {
     }
 
     threads.push(tokio::spawn(async move {
-        delay_for(Duration::from_secs(1)).await;
+        sleep(Duration::from_secs(1)).await;
         unsafe {
             START = Some(Instant::now());
         }
@@ -141,9 +141,9 @@ async fn start_mock_client(client_id: u64) {
                     order.client_id, order.seq_number
                 );
                 tx.send(order);
-                delay_for(Duration::from_micros(1_000_000 / TARGET_THROUGHPUT)).await;
+                sleep(Duration::from_micros(1_000_000 / TARGET_THROUGHPUT)).await;
             } else {
-                delay_for(LOOPING_PERIOD).await;
+                sleep(LOOPING_PERIOD).await;
             }
         }
     }));
@@ -156,7 +156,7 @@ async fn start_mock_client(client_id: u64) {
 async fn connect_to_leader(leader_id: u16) -> MatchingEngineRpcClient<tonic::transport::Channel> {
     loop {
         let addr = SocketAddrV4::new(Ipv4Addr::LOCALHOST, DEFAULT_BASE_PORT + leader_id);
-        let addr = format!("http://{:}", addr.to_string());
+        let addr = format!("http://{:}", addr);
         if let Ok(new_conn) = MatchingEngineRpcClient::connect(addr).await {
             return new_conn;
         }
@@ -164,9 +164,9 @@ async fn connect_to_leader(leader_id: u16) -> MatchingEngineRpcClient<tonic::tra
 }
 
 fn generate_random_order_request(client_id: u64, seq_number: u64) -> Order {
-    let mut rng = rand::thread_rng();
-    let price: u64 = rng.gen_range(10..=1000);
-    let side = OrderSide::from_i32(rng.gen_range(0..=1)).unwrap();
+    let mut rng = rand::rng();
+    let price: u64 = rng.random_range(10..=1000);
+    let side = OrderSide::from_i32(rng.random_range(0..=1)).unwrap();
     Order {
         client_id,
         price,

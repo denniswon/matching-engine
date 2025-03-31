@@ -5,19 +5,16 @@ use std::time::{Duration, Instant};
 
 use async_trait::async_trait;
 use futures::future::try_join_all;
-use itertools::Itertools;
 use rand::Rng;
 use tokio::sync::Barrier;
-use tokio::sync::{Mutex, RwLock};
+use tokio::sync::RwLock;
 use tokio::task::spawn;
-use tokio::time::delay_for;
+use tokio::time::sleep;
 use tracing::{debug, info};
 
-use raft::network::RaftNetwork;
 use raft::raft::{Raft, RaftNode};
 use raft::shutdown::ShutdownSignal;
 use raft::state_machine::StateMachine;
-use raft::storage::RaftStorage;
 
 use self::raft::config::RaftConfig;
 use self::raft::protobuf::Command;
@@ -50,7 +47,7 @@ async fn main() {
         for (min_timeout, max_timeout) in params.clone().into_iter() {
             info!("Setup: {:} {:} {:}", i, min_timeout, max_timeout);
             failover_latency_evaluation(min_timeout, max_timeout).await;
-            delay_for(Duration::from_millis(100)).await;
+            sleep(Duration::from_millis(100)).await;
         }
     }
 }
@@ -67,7 +64,7 @@ async fn failover_latency_evaluation(
     let start_barrier1 = Arc::new(Barrier::new((2 * N_NODES + 1) as usize));
     let start_barrier2 = Arc::new(Barrier::new((N_NODES + 1) as usize));
     let timeout_offset =
-        rand::thread_rng().gen_range(Duration::from_millis(0), config.heartbeat_period);
+        rand::rng().random_range(Duration::from_millis(0), config.heartbeat_period);
     let th_nodes = tokio::spawn(setup_nodes(
         config,
         start_barrier1.clone(),
@@ -75,10 +72,10 @@ async fn failover_latency_evaluation(
         timeout_offset,
     ));
 
-    //delay_for(Duration::from_millis(1)).await;
+    //sleep(Duration::from_millis(1)).await;
     debug!("Releasing start_barrier1");
     start_barrier1.wait().await;
-    //delay_for(Duration::from_millis(1)).await;
+    //sleep(Duration::from_millis(1)).await;
     debug!("Releasing barrier2");
     start_barrier2.wait().await;
     th_nodes.await?;
@@ -95,7 +92,7 @@ async fn setup_nodes(
     let shutdown_signal = Arc::new(ShutdownSignal::new());
 
     let raft_states: Vec<Arc<RwLock<Raft>>> = (0..config.num_replicas)
-        .map(|id| Raft::new(id as u64, config.clone(), NoopStateMachine::new()))
+        .map(|id| Raft::new(id, config.clone(), NoopStateMachine::new()))
         .map(|raft| Arc::new(RwLock::new(raft)))
         .collect();
 
@@ -123,7 +120,7 @@ async fn setup_nodes(
 
             if raft.target_state.is_leader() {
                 debug!("Killing leader (node {:})", raft.voted_for.unwrap());
-                delay_for(Duration::from_millis(5000)).await;
+                sleep(Duration::from_millis(5000)).await;
             }
         }));
 
@@ -136,7 +133,7 @@ async fn setup_nodes(
     }
 
     threads.push(spawn(async move {
-        delay_for(Duration::from_millis(1500)).await;
+        sleep(Duration::from_millis(1500)).await;
         debug!("Sending shutdown signal");
         shutdown_signal.shutdown();
         debug!("Shutdown signal sent");

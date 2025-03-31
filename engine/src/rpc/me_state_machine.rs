@@ -52,9 +52,7 @@ impl MEStateMachine {
         client_id: ClientId,
     ) -> broadcast::Receiver<Trade> {
         let mut trade_channel = self.trade_channel.write().await;
-        if !trade_channel.contains_key(&client_id) {
-            trade_channel.insert(client_id, broadcast::channel(ACK_CHANNEL_CAPACITY));
-        }
+        trade_channel.entry(client_id).or_insert_with(|| broadcast::channel(ACK_CHANNEL_CAPACITY));
         let (tx, _) = trade_channel.get(&client_id).unwrap();
         tx.subscribe()
     }
@@ -62,9 +60,7 @@ impl MEStateMachine {
     /// Returns the channel over which to send trades to the given client
     pub async fn get_trade_channel_sender(&self, client_id: ClientId) -> broadcast::Sender<Trade> {
         let mut trade_channel = self.trade_channel.write().await;
-        if !trade_channel.contains_key(&client_id) {
-            trade_channel.insert(client_id, broadcast::channel(ACK_CHANNEL_CAPACITY));
-        }
+        trade_channel.entry(client_id).or_insert_with(|| broadcast::channel(ACK_CHANNEL_CAPACITY));
         let (tx, _) = trade_channel.get(&client_id).unwrap();
         tx.clone()
     }
@@ -124,10 +120,7 @@ impl StateMachine for MENode {
             if !ack_channel_map.contains_key(&command.client_id) {
                 drop(ack_channel_map);
                 let mut ack_channel_map = sm.order_acknowledgement_channel.write().await;
-                if !ack_channel_map.contains_key(&command.client_id) {
-                    ack_channel_map
-                        .insert(command.client_id, broadcast::channel(ACK_CHANNEL_CAPACITY));
-                }
+                ack_channel_map.entry(command.client_id).or_insert_with(|| broadcast::channel(ACK_CHANNEL_CAPACITY));
                 let (tx, _) = ack_channel_map.get(&command.client_id).unwrap();
                 tx.clone()
             } else {

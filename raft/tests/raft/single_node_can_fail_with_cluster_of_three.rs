@@ -4,24 +4,20 @@ use std::iter::repeat;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
 
-use async_trait::async_trait;
 use futures::future::try_join_all;
 use itertools::Itertools;
-use tokio::sync::{Mutex, RwLock};
+use tokio::sync::RwLock;
 use tokio::task::spawn;
-use tokio::time::{delay_for, Duration};
+use tokio::time::{Duration, sleep};
 use tracing::debug;
 
-use raft::network::RaftNetwork;
 use raft::protobuf::{Command, CommandType, OrderSide};
 use raft::raft::{Raft, RaftNode};
 use raft::shutdown::ShutdownSignal;
-use raft::storage::RaftStorage;
 
 use super::common::*;
 
 use self::raft::config::RaftConfig;
-use self::raft::state_machine::StateMachine;
 
 #[tokio::test(threaded_scheduler)]
 async fn test_single_node_can_fail_with_cluster_of_three() -> Result<()> {
@@ -40,7 +36,7 @@ async fn check_expected_state(nodes: &Vec<RaftNode>, expected_last_index: usize)
     let mut terms = vec![];
     let mut leaders = vec![];
     let mut last_index = vec![];
-    for node in nodes.into_iter() {
+    for node in nodes.iter() {
         let raft = node.raft.read().await;
         terms.push(raft.current_term);
         leaders.push(raft.voted_for);
@@ -74,7 +70,7 @@ async fn check_expected_state(nodes: &Vec<RaftNode>, expected_last_index: usize)
     assert!(*terms.first().unwrap() > 0);
     println!("Leaders: {:?}", &leaders);
     println!("Leader: {:?}", leaders.first().unwrap());
-    assert!(leaders.first().is_some());
+    assert!(!leaders.is_empty());
     assert!(leaders.iter().all_equal());
     println!("Last log index: {:?}", &last_index);
     assert!(last_index.iter().all_equal());
@@ -93,7 +89,7 @@ async fn simulate_raft(
     let config = RaftConfig::new(num_replicas);
     let nodes: Vec<RaftNode> = (0..num_replicas)
         .map(|id| {
-            let raft = Raft::new(id as u64, config.clone(), PrinterStateMachine::new());
+            let raft = Raft::new(id, config.clone(), PrinterStateMachine::new());
             let shared_raft = Arc::new(RwLock::new(raft));
             RaftNode::new_with_shutdown(shared_raft, shutdown_signals[id as usize].clone())
         })
@@ -112,10 +108,10 @@ async fn simulate_raft(
         let raft_node = node.clone();
         let apply_count = apply_count.clone();
         threads.push(spawn(async move {
-            delay_for(Duration::from_millis(1000)).await;
+            sleep(Duration::from_millis(1000)).await;
 
             for i in 0..target_apply_count {
-                delay_for(Duration::from_micros(200)).await;
+                sleep(Duration::from_micros(200)).await;
                 let command = Command {
                     r#type: CommandType::Limit as i32,
                     sequence_id: i as u64,
@@ -137,20 +133,20 @@ async fn simulate_raft(
         threads.push(spawn(async move {
             // Block the current leader
 
-            delay_for(Duration::from_millis(500)).await;
+            sleep(Duration::from_millis(500)).await;
 
             debug!("Trying to lock for killing");
             let raft = raft_node.raft.write().await;
             debug!("Locked for killing");
             if raft.target_state.is_leader() {
                 debug!("Killing leader (node {:})", raft.voted_for.unwrap());
-                delay_for(Duration::from_millis(5000)).await;
+                sleep(Duration::from_millis(5000)).await;
             }
         }));
     }
 
     threads.push(spawn(async move {
-        delay_for(Duration::from_secs(simulation_length)).await;
+        sleep(Duration::from_secs(simulation_length)).await;
         debug!("Sending shutdown signal");
         shutdown_signals.iter().for_each(|signal| signal.shutdown());
         debug!("Shutdown signal sent");

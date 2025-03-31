@@ -5,10 +5,10 @@ use std::time::{Duration, Instant};
 
 use futures::future::try_join_all;
 use rand::Rng;
+use tokio::sync::RwLock;
 use tokio::sync::mpsc;
 use tokio::sync::mpsc::{Receiver, Sender};
-use tokio::sync::RwLock;
-use tokio::time::delay_for;
+use tokio::time::sleep;
 use tokio::{join, spawn, task};
 use tonic::codegen::Arc;
 use tonic::transport::Server;
@@ -16,9 +16,9 @@ use tracing::*;
 
 use crate::config::RaftConfig;
 use crate::network::RaftNetwork;
-use crate::protobuf::raft_rpc_server::RaftRpcServer;
 use crate::protobuf::Command;
 use crate::protobuf::LogEntry;
+use crate::protobuf::raft_rpc_server::RaftRpcServer;
 use crate::protobuf::{AppendEntriesRequest, AppendEntriesResponse, VoteRequest, VoteResponse};
 use crate::rpc_server::RaftRPCServer;
 use crate::shutdown::ShutdownSignal;
@@ -135,7 +135,7 @@ impl Raft {
         if min_timeout == max_timeout {
             min_timeout
         } else {
-            rand::thread_rng().gen_range(min_timeout, max_timeout)
+            rand::rng().random_range(min_timeout..=max_timeout)
         }
     }
 
@@ -223,7 +223,7 @@ impl Raft {
 
         // If the candidate is not at least as uptodate as us, reject the vote
         let client_is_uptodate = (request.last_log_term >= self.last_log_term)
-            && (request.last_log_index >= self.last_log_index as u64);
+            && (request.last_log_index >= self.last_log_index);
         if !client_is_uptodate {
             return Ok(VoteResponse {
                 term: self.current_term,
@@ -280,7 +280,7 @@ impl Raft {
         self.set_target_state(TargetState::Follower);
 
         // Check that logs are consistent (ie. last log and terms match)
-        let msg_index_and_term_match = (request.prev_log_index == self.last_log_index as u64)
+        let msg_index_and_term_match = (request.prev_log_index == self.last_log_index)
             && (request.prev_log_term == self.last_log_term);
         if msg_index_and_term_match {
             // Only a heartbeat
@@ -504,7 +504,7 @@ impl RaftNode {
                 };
             }
 
-            delay_for(LOOPING_PERIOD).await;
+            sleep(LOOPING_PERIOD).await;
         }
     }
 
@@ -528,7 +528,7 @@ impl RaftNode {
         let request = VoteRequest {
             term,
             candidate_id: me,
-            last_log_index: last_log_index as u64,
+            last_log_index,
             last_log_term,
         };
         let mut handles = vec![];
@@ -537,12 +537,12 @@ impl RaftNode {
         {
             let (s, r) = mpsc::channel(network.peers.len() - 1);
 
-            for (&id, _) in network.peers.iter().filter(|(&id, _)| id != me) {
+            for (id, _) in network.peers.iter().filter(|(id, _)| *id != &me) {
                 let raft = self.raft.clone();
                 let request = request.clone();
                 let s = s.clone();
                 handles.push(spawn(async move {
-                    RaftNode::send_request_vote(raft, request, id, s).await
+                    RaftNode::send_request_vote(raft, request, *id, s).await
                 }));
             }
 
@@ -603,7 +603,7 @@ impl RaftNode {
         raft: Arc<RwLock<Raft>>,
         request: VoteRequest,
         id: u64,
-        mut s: Sender<u64>,
+        s: Sender<u64>,
     ) -> Result<()> {
         let peer = {
             let raft = raft.read().await;
@@ -671,7 +671,7 @@ impl RaftNode {
                 self.send_heartbeats(me, current_term, network.clone(), leader_commit, leader_id)
                     .await?;
             } else {
-                delay_for(LOOPING_PERIOD).await;
+                sleep(LOOPING_PERIOD).await;
             }
         }
     }
@@ -777,15 +777,12 @@ impl RaftNode {
         let entries_end = min(raft.log.len(), next_index + raft.config.batching_size);
         raft.next_index.insert(id, entries_end as u64);
 
-        let logs_to_send = raft.log[next_index..entries_end]
-            .iter()
-            .cloned()
-            .collect::<Vec<LogEntry>>();
+        let logs_to_send = raft.log[next_index..entries_end].to_vec();
 
         AppendEntriesRequest {
             term: current_term,
             entries: logs_to_send,
-            leader_commit: leader_commit as u64,
+            leader_commit,
             leader_id: leader_id.unwrap(),
             prev_log_index: prev_log_index as u64,
             prev_log_term,

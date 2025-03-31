@@ -36,7 +36,7 @@ async fn main() {
 
             let server = MatchingEngineRpcServer::new(engine);
 
-            let mut addr = config.addresses.get(id as usize).unwrap().clone();
+            let mut addr = *config.addresses.get(id as usize).unwrap();
             addr.set_port(addr.port() + 10);
 
             println!("Starting rpc server at {:?}", &addr);

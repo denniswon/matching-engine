@@ -1,7 +1,5 @@
 extern crate raft;
 
-use std::collections::HashMap;
-use std::net::SocketAddr;
 use std::sync::atomic::AtomicBool;
 use std::sync::atomic::Ordering;
 use std::sync::Arc;
@@ -9,18 +7,16 @@ use std::time::Duration;
 
 use async_trait::async_trait;
 use tokio::join;
-use tokio::sync::{Mutex, RwLock};
-use tokio::time::delay_for;
+use tokio::sync::RwLock;
+use tokio::time::sleep;
 use tonic::transport::Server;
 
 use raft::config::RaftConfig;
-use raft::network::RaftNetwork;
 use raft::protobuf::raft_rpc_server::RaftRpcServer;
 use raft::protobuf::Command;
 use raft::raft::Raft;
 use raft::rpc_server::RaftRPCServer;
 use raft::state_machine::StateMachine;
-use raft::storage::RaftStorage;
 
 #[derive(Debug)]
 struct PrinterStateMachine;
@@ -43,13 +39,13 @@ async fn test_tonic_is_shut_down_after_signal() -> Result<(), Box<dyn std::error
     let signal = AtomicBool::new(false);
     let config = RaftConfig::new(3);
     let id = 0u64;
-    let addr = config.addresses.get(id as usize).unwrap().clone();
+    let addr = *config.addresses.get(id as usize).unwrap();
     let raft = Raft::new(id, config, PrinterStateMachine::new());
     let raft = Arc::new(RwLock::new(raft));
     let server = RaftRpcServer::new(RaftRPCServer { raft: raft.clone() });
 
     let shutdown_ft = async {
-        delay_for(Duration::from_secs(1)).await;
+        sleep(Duration::from_secs(1)).await;
         signal.swap(true, Ordering::Release);
         println!("Sending shutdown signal");
     };

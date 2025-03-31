@@ -7,6 +7,12 @@ use crate::raft::Result;
 #[derive(Debug)]
 pub struct RaftStorage {}
 
+impl Default for RaftStorage {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl RaftStorage {
     pub fn new() -> Self {
         Self {}

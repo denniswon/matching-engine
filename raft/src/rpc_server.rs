@@ -28,7 +28,7 @@ impl RaftRpc for RaftRPCServer {
             Ok(result) => Ok(Response::new(result)),
             Err(err) => Err(Status::new(
                 Code::Internal,
-                format!("handle_request_vote failed with {:}", err.to_string()),
+                format!("handle_request_vote failed with {:}", err),
             )),
         }
     }

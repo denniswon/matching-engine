@@ -1,7 +1,7 @@
 use std::sync::{Arc, Mutex};
 
 use tokio::sync::watch;
-use tokio::time::{delay_for, Duration};
+use tokio::time::{Duration, sleep};
 
 const MAX_ID: u32 = 10;
 
@@ -24,7 +24,7 @@ async fn main() {
     let mm = me.clone();
     let tx_handle = tokio::spawn(async move {
         for id in 1..=MAX_ID {
-            delay_for(Duration::from_millis(100)).await;
+            sleep(Duration::from_millis(100)).await;
             let me = mm.lock().unwrap();
             me.last_log_index_tx.broadcast(id);
         }
